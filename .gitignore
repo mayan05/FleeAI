@@ -216,7 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
+REQUIREMENTS.md 
+SCHEDULE.md 
 .venv/
 .env
 __pycache__/
