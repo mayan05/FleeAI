@@ -10,7 +10,7 @@ the exact same structure, so their agents plug together without surprises.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 
 class FlightQuery(BaseModel):
@@ -38,6 +38,14 @@ class FlightQuery(BaseModel):
     )
     return_date: Optional[str] = Field(
         default=None, description="Return date in YYYY-MM-DD format, if round trip"
+    )
+    origin_iata: Optional[str] = Field(
+        default=None,
+        description="3-letter IATA code for origin airport, resolved deterministically from origin city name",
+    )
+    destination_iata: Optional[str] = Field(
+        default=None,
+        description="3-letter IATA code for destination airport, resolved deterministically from destination city name",
     )
     passengers: int = Field(default=1, description="Number of passengers")
     budget_inr: Optional[int] = Field(
@@ -96,3 +104,24 @@ class BookingConfirmation(BaseModel):
     total_price_inr: int
     status: str = Field(description="CONFIRMED / PENDING / CANCELLED")
     itinerary_summary: str
+
+
+class OrchestratorResponse(BaseModel):
+    """What the orchestrator returns to the UI after each interaction."""
+
+    stage: Literal["clarification", "searching", "query_complete", "results", "select", "booking", "done", "error"] = Field(
+        description="Current stage of the pipeline, tells the UI what to render"
+    )
+    message: str = Field(
+        description="Human-readable message to display to the user"
+    )
+    clarification_question: Optional[str] = Field(
+        default=None,
+        description="Follow-up question for the user, set when stage='clarification'",
+    )
+    flight_query: Optional[FlightQuery] = Field(
+        default=None, description="The resolved flight query, available once complete"
+    )
+    ranked_flights: Optional[RankedFlights] = Field(
+        default=None, description="Search results, available when stage='results' or 'select'"
+    )
