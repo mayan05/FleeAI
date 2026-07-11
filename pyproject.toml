@@ -1,0 +1,10 @@
+[project]
+name = "fleeai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "crewai[litellm]>=1.15.2",
+    "duffel-api>=0.6.2",
+]
