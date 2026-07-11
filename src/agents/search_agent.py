@@ -1,7 +1,7 @@
 import os
 import re
 import requests
-from crewai import Agent, Task
+from crewai import Agent, Crew, Task
 from crewai.tools import tool
 from src.llm_config import fleeai_llm
 from src.schemas.models import FlightQuery, FlightOption, RankedFlights
@@ -115,12 +115,22 @@ search_agent = Agent(
 
 def create_search_task(query: FlightQuery) -> Task:
     """Creates a task for the agent to execute based on the user's FlightQuery."""
+    # Duffel's API requires 3-letter IATA codes, not city names. The
+    # orchestrator resolves origin_iata/destination_iata deterministically
+    # in Python (src/utils/iata_lookup.py) before Agent 2 ever runs -- use
+    # those. Falling back to query.origin/destination keeps this working
+    # for standalone tests that hardcode an IATA code directly into origin
+    # (e.g. tests/test_day2_agent2.py uses origin="LHR") without going
+    # through the orchestrator's resolution step at all.
+    origin_code = query.origin_iata or query.origin
+    destination_code = query.destination_iata or query.destination
+
     return Task(
         description=f"""
         Use the 'Search and Filter Duffel Flights' tool to find flights.
         Input Data:
-        - Origin: {query.origin}
-        - Destination: {query.destination}
+        - Origin: {origin_code}
+        - Destination: {destination_code}
         - Date: {query.departure_date}
         - Budget: {query.budget_inr}
         - Preferences: {query.preferences}
@@ -135,3 +145,27 @@ def create_search_task(query: FlightQuery) -> Task:
         agent=search_agent,
         output_pydantic=RankedFlights
     )
+
+
+def run_flight_search(query: FlightQuery) -> RankedFlights:
+    """
+    Entry point used by the orchestrator (src/orchestrator.py::_run_search).
+
+    This is the piece that was missing: the orchestrator does
+    `from src.agents.search_agent import run_flight_search` and silently
+    falls back to "Agent 2 not built yet" if this import fails -- which is
+    exactly what was happening. Any genuine failure during the crew run
+    (bad API key, network error, malformed LLM output, etc.) is allowed to
+    propagate as a normal exception; the orchestrator's own try/except in
+    _run_search_step() already turns that into a proper error message for
+    the UI, so we don't want to swallow it here too.
+    """
+    task = create_search_task(query)
+    crew = Crew(
+        agents=[search_agent],
+        tasks=[task],
+        verbose=True,
+        cache=False,
+    )
+    result = crew.kickoff()
+    return result.pydantic
