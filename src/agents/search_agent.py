@@ -21,7 +21,7 @@ def _parse_iso8601_duration_minutes(duration: str | None) -> int:
     return hours * 60 + minutes
 
 @tool("Search and Filter Duffel Flights")
-def search_duffel_flights(origin: str, destination: str, departure_date: str, budget_inr: float, preferences: str) -> dict:
+def search_duffel_flights(origin: str, destination: str, departure_date: str, preferences: str, budget_inr: float | None = None) -> dict:
     """Searches Duffel API for flights and filters them by budget and preferences."""
     access_token = os.environ.get("DUFFEL_ACCESS_TOKEN")
     if not access_token:
@@ -64,10 +64,14 @@ def search_duffel_flights(origin: str, destination: str, departure_date: str, bu
             return {"summary": "No flights found for this route and date.", "options": []}
 
         # Deterministic Python logic: Filter by budget using dictionary access
+        # Deterministic Python logic: Filter by budget using dictionary access.
+        # No budget given by the user -> treat as "no cap" instead of failing.
+        effective_budget = budget_inr if budget_inr is not None else float("inf")
+
         valid_options = []
         for offer in offers:
             price = float(offer["total_amount"])
-            if price <= budget_inr:
+            if price <= effective_budget:
                 flight_slice = offer["slices"][0]
                 segments = flight_slice["segments"]
                 first_segment = segments[0]
