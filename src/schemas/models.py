@@ -125,3 +125,6 @@ class OrchestratorResponse(BaseModel):
     ranked_flights: Optional[RankedFlights] = Field(
         default=None, description="Search results, available when stage='results' or 'select'"
     )
+    booking_confirmation: Optional[BookingConfirmation] = Field(
+        default=None, description="Booking result from Agent 3, available when stage='booking' or 'done'"
+    )

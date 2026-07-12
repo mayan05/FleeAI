@@ -10,6 +10,19 @@ Provides a conversational interface for the flight booking pipeline:
 Run with:  streamlit run src/app.py
 """
 
+import sys
+import os
+
+# Ensure the project root (parent of this file's directory) is on the path
+# so `from src.xxx import ...` works when Streamlit runs this file directly.
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _project_root)
+
+# Load .env before any agent/API imports so DUFFEL_ACCESS_TOKEN and
+# GROQ_API_KEY are available in os.environ when the modules are imported.
+from dotenv import load_dotenv
+load_dotenv(os.path.join(_project_root, ".env"))
+
 import streamlit as st
 from src.orchestrator import FleeAISession
 
@@ -133,6 +146,53 @@ st.markdown(
         background: #fef3c7;
         color: #92400e;
     }
+
+    /* Booking confirmation card */
+    .booking-card {
+        background: linear-gradient(145deg, #052e16 0%, #14532d 100%);
+        border: 1px solid #16a34a;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+        color: #dcfce7;
+    }
+    .booking-card .pnr {
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        color: #4ade80;
+        margin-bottom: 0.5rem;
+    }
+    .booking-card .booking-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #86efac;
+        margin-bottom: 0.2rem;
+    }
+    .booking-card .booking-route {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+    }
+    .booking-card .booking-meta {
+        display: flex;
+        gap: 2rem;
+        font-size: 0.9rem;
+        color: #bbf7d0;
+        margin-bottom: 0.75rem;
+    }
+    .booking-card .booking-summary {
+        font-size: 0.9rem;
+        color: #86efac;
+        border-top: 1px solid #166534;
+        padding-top: 0.75rem;
+        margin-top: 0.5rem;
+    }
+    .status-confirmed {
+        background: #dcfce7;
+        color: #14532d;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -219,6 +279,36 @@ def render_query_summary(query):
         st.markdown(chip_html, unsafe_allow_html=True)
 
 
+def render_booking_confirmation(confirmation):
+    """Render a booking confirmation as a premium green card."""
+    f = confirmation.selected_flight
+    dep_time = f.departure_time.split("T")[-1][:5] if "T" in f.departure_time else f.departure_time
+    arr_time = f.arrival_time.split("T")[-1][:5] if "T" in f.arrival_time else f.arrival_time
+    stops_text = "Direct" if f.stops == 0 else f"{f.stops} stop{'s' if f.stops > 1 else ''}"
+    status_class = "status-confirmed" if confirmation.status == "CONFIRMED" else "status-badge"
+
+    st.markdown(
+        f"""
+        <div class="booking-card">
+            <div class="booking-label">Booking Reference (PNR)</div>
+            <div class="pnr">{confirmation.pnr}</div>
+            <div class="booking-route">
+                ✈ {f.airline} &nbsp;·&nbsp; {f.origin} → {f.destination}
+            </div>
+            <div class="booking-meta">
+                <span>🕐 {dep_time} – {arr_time}</span>
+                <span>🔄 {stops_text}</span>
+                <span>👥 {confirmation.passenger_count} passenger{'s' if confirmation.passenger_count > 1 else ''}</span>
+                <span>💰 ₹{confirmation.total_price_inr:,}</span>
+                <span class="status-badge {status_class}">{confirmation.status}</span>
+            </div>
+            <div class="booking-summary">📋 {confirmation.itinerary_summary}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # ── Render chat history ─────────────────────────────────────────────────────
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -230,6 +320,9 @@ for msg in st.session_state.messages:
 
         if msg.get("flight_query"):
             render_query_summary(msg["flight_query"])
+
+        if msg.get("booking_confirmation"):
+            render_booking_confirmation(msg["booking_confirmation"])
 
 
 # ── Chat input ───────────────────────────────────────────────────────────────
@@ -305,6 +398,20 @@ if prompt := st.chat_input(
             else:
                 st.session_state.messages.append({"role": "assistant", "content": summary_msg})
                 st.session_state.awaiting_selection = False
+
+        elif response.stage == "booking":
+            # Agent 3 succeeded — render full booking confirmation card
+            st.markdown(f"### 🎉 {response.message}")
+            if response.booking_confirmation:
+                render_booking_confirmation(response.booking_confirmation)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"### 🎉 {response.message}",
+                "booking_confirmation": response.booking_confirmation,
+            })
+            st.session_state.awaiting_selection = False
+            # Reset session for the next search
+            st.session_state.session = FleeAISession()
 
         elif response.stage == "done":
             st.markdown(response.message)
