@@ -21,8 +21,10 @@ def _parse_iso8601_duration_minutes(duration: str | None) -> int:
     return hours * 60 + minutes
 
 @tool("Search and Filter Duffel Flights")
-def search_duffel_flights(origin: str, destination: str, departure_date: str, preferences: str, budget_inr: float | None = None) -> dict:
-    """Searches Duffel API for flights and filters them by budget and preferences."""
+def search_duffel_flights(origin: str, destination: str, departure_date: str, preferences: str, budget_inr: str = "0") -> dict:
+    """Searches Duffel API for flights and filters them by budget and preferences.
+    Pass budget_inr as a numeric string (e.g. '5000'). Pass '0' if there is no budget constraint.
+    """
     access_token = os.environ.get("DUFFEL_ACCESS_TOKEN")
     if not access_token:
         return {"summary": "Error: DUFFEL_ACCESS_TOKEN is not set.", "options": []}
@@ -63,10 +65,15 @@ def search_duffel_flights(origin: str, destination: str, departure_date: str, pr
         if not offers:
             return {"summary": "No flights found for this route and date.", "options": []}
 
-        # Deterministic Python logic: Filter by budget using dictionary access
-        # Deterministic Python logic: Filter by budget using dictionary access.
-        # No budget given by the user -> treat as "no cap" instead of failing.
-        effective_budget = budget_inr if budget_inr is not None else float("inf")
+        # Deterministic Python logic: Filter by budget.
+        # budget_inr arrives as a string (avoids Groq nullable-float schema issues).
+        # Values like 'null', 'none', '', '0' all mean no cap.
+        _raw = str(budget_inr).strip().lower()
+        try:
+            budget_float = float(_raw) if _raw not in ("", "null", "none", "0") else 0.0
+        except ValueError:
+            budget_float = 0.0
+        effective_budget = float("inf") if budget_float <= 0 else budget_float
 
         valid_options = []
         for offer in offers:
@@ -90,7 +97,8 @@ def search_duffel_flights(origin: str, destination: str, departure_date: str, pr
                 })
 
         if not valid_options:
-            return {"summary": f"Flights found, but none under the budget of {budget_inr} INR.", "options": []}
+            cap_msg = f"under the budget of ₹{int(budget_float):,} INR" if budget_float > 0 else "for this route and date"
+            return {"summary": f"Flights found, but none {cap_msg}.", "options": []}
 
         # Deterministic Python logic: Sort by price (cheapest first)
         valid_options.sort(key=lambda x: x["price_inr"])
