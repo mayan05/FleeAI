@@ -109,7 +109,7 @@ class BookingConfirmation(BaseModel):
 class OrchestratorResponse(BaseModel):
     """What the orchestrator returns to the UI after each interaction."""
 
-    stage: Literal["clarification", "searching", "query_complete", "results", "select", "booking", "done", "error"] = Field(
+    stage: Literal["clarification", "searching", "query_complete", "results", "select", "booking", "done", "error", "reset"] = Field(
         description="Current stage of the pipeline, tells the UI what to render"
     )
     message: str = Field(
