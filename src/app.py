@@ -398,6 +398,10 @@ if prompt := st.chat_input(
             else:
                 st.session_state.messages.append({"role": "assistant", "content": summary_msg})
                 st.session_state.awaiting_selection = False
+                # No options to select from (no flights / budget too low) --
+                # reset so the user's next message starts a fresh search
+                # instead of hitting "I wasn't expecting input at this point."
+                st.session_state.session = FleeAISession()
 
         elif response.stage == "booking":
             # Agent 3 succeeded — render full booking confirmation card
@@ -424,6 +428,13 @@ if prompt := st.chat_input(
             st.markdown(response.message)
             st.session_state.messages.append({"role": "assistant", "content": response.message})
             st.session_state.awaiting_selection = True
+
+        elif response.stage == "reset":
+            # User asked to restart mid-flow (e.g. typed "restart" while
+            # answering a clarification question or picking a flight)
+            st.markdown(f"🔄 {response.message}")
+            st.session_state.messages.append({"role": "assistant", "content": f"🔄 {response.message}"})
+            st.session_state.awaiting_selection = False
 
         elif response.stage == "error":
             error_msg = f"❌ {response.message}"

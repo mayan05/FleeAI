@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATION_ROUNDS = 5
 
+# If the user types any of these at any point in the flow (mid-clarification,
+# mid-selection, wherever), we treat it as "forget everything, start over" --
+# this is the Day 4 edge case for "user changes their mind mid-flow" without
+# forcing them to find/click the sidebar "New Search" button.
+RESET_KEYWORDS = {"restart", "start over", "new search", "reset", "cancel", "nevermind", "never mind"}
+
 
 def _resolve_iata_codes(query: FlightQuery) -> FlightQuery:
     """
@@ -119,8 +125,21 @@ class FleeAISession:
         self.stage = "understanding"
         return self._run_query_step(user_message)
 
+    def reset(self) -> None:
+        """Wipe all session state back to a fresh, idle session."""
+        self.__init__()
+
     def respond(self, user_answer: str) -> OrchestratorResponse:
         """Handle a follow-up answer (clarification response or flight selection)."""
+        # Let the user bail out of any stage (clarification loop, flight
+        # selection, etc.) instead of getting stuck if they change their mind.
+        if user_answer.strip().lower() in RESET_KEYWORDS:
+            self.reset()
+            return OrchestratorResponse(
+                stage="reset",
+                message="No problem, let's start fresh! Where would you like to fly?",
+            )
+
         if self.stage == "understanding":
             # User is answering a clarification question
             self.conversation_context += (
