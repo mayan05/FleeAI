@@ -135,6 +135,50 @@ st.markdown(
         color: #c7d2fe;
     }
 
+    /* Search form panel — style the native Streamlit form container directly */
+    div[data-testid="stForm"] {
+        background: linear-gradient(145deg, #13111c 0%, #1e1b4b 100%) !important;
+        border: 1px solid #4338ca !important;
+        border-radius: 20px !important;
+        padding: 1.75rem 2rem 1.25rem 2rem !important;
+        margin-bottom: 1.75rem !important;
+    }
+
+    /* Style the Streamlit text_input & date_input labels inside the panel */
+    div[data-testid="stForm"] label {
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+        color: #94a3b8 !important;
+    }
+    div[data-testid="stForm"] input {
+        background: #0f0e1a !important;
+        border: 1px solid #3730a3 !important;
+        border-radius: 10px !important;
+        color: #e2e8f0 !important;
+    }
+    div[data-testid="stForm"] input:focus {
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 0 2px rgba(99,102,241,0.25) !important;
+    }
+    /* Search button */
+    div[data-testid="stForm"] button[kind="primaryFormSubmit"],
+    div[data-testid="stForm"] button[data-testid="baseButton-primaryFormSubmit"] {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+        border: none !important;
+        border-radius: 10px !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        width: 100% !important;
+        padding: 0.6rem 0 !important;
+        margin-top: 0.5rem !important;
+        transition: opacity 0.2s ease !important;
+    }
+    div[data-testid="stForm"] button[kind="primaryFormSubmit"]:hover {
+        opacity: 0.88 !important;
+    }
+
     /* Status badge */
     .status-badge {
         display: inline-block;
@@ -207,6 +251,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "awaiting_selection" not in st.session_state:
     st.session_state.awaiting_selection = False
+if "search_submitted" not in st.session_state:
+    st.session_state.search_submitted = False
 
 
 # ── Header ───────────────────────────────────────────────────────────────────
@@ -326,11 +372,104 @@ for msg in st.session_state.messages:
             render_booking_confirmation(msg["booking_confirmation"])
 
 
-# ── Chat input ───────────────────────────────────────────────────────────────
-if prompt := st.chat_input(
+# ── Search form (shown only while session is idle / not yet submitted) ───────
+if not st.session_state.search_submitted:
+    st.markdown('<div class="search-panel-title" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#6366f1;margin-bottom:0.5rem;">🔍 Plan your trip</div>', unsafe_allow_html=True)
+
+    with st.form(key="flight_search_form", border=False):
+        col1, col2, col3 = st.columns([2, 2, 1.5])
+        with col1:
+            form_origin = st.text_input(
+                "From",
+                placeholder="e.g. Bangalore, BLR",
+                key="form_origin",
+            )
+        with col2:
+            form_destination = st.text_input(
+                "To",
+                placeholder="e.g. Delhi, DEL",
+                key="form_destination",
+            )
+        with col3:
+            import datetime
+            form_date = st.date_input(
+                "Departure date",
+                value=None,
+                min_value=datetime.date.today(),
+                key="form_date",
+                format="YYYY-MM-DD",
+            )
+
+        search_clicked = st.form_submit_button("✈ Search Flights", use_container_width=True)
+
+    if search_clicked:
+        if not form_origin or not form_destination:
+            st.warning("Please fill in both **From** and **To** fields before searching.")
+        else:
+            # Build a natural-language query the orchestrator understands
+            date_part = f" on {form_date}" if form_date else ""
+            auto_prompt = f"I want to fly from {form_origin} to {form_destination}{date_part}."
+
+            st.session_state.search_submitted = True
+            st.session_state.messages.append({"role": "user", "content": auto_prompt})
+
+            session: FleeAISession = st.session_state.session
+            with st.spinner("🧠 Understanding your request..."):
+                response = session.start(auto_prompt)
+
+            # --- identical response-handling logic used in the chat block below ---
+            if response.stage == "clarification":
+                msg_content = f"🤔 {response.clarification_question}"
+                st.session_state.messages.append({"role": "assistant", "content": msg_content})
+                st.session_state.awaiting_selection = False
+
+            elif response.stage == "query_complete":
+                msg_content = response.message
+                if response.flight_query:
+                    query_json = response.flight_query.model_dump_json(indent=2)
+                    msg_content += "\n\n```json\n" + query_json + "\n```"
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": msg_content,
+                    "flight_query": response.flight_query,
+                })
+                st.session_state.awaiting_selection = False
+                st.session_state.session = FleeAISession()
+
+            elif response.stage == "results":
+                is_mock = "MOCK" in (response.ranked_flights.options[0].flight_id if response.ranked_flights and response.ranked_flights.options else "")
+                mock_badge = ' <span class="status-badge status-mock">⚠ Mock Data</span>' if is_mock else ""
+                summary_msg = f"### 🔍 Search Results{mock_badge}\n\n{response.message}"
+                if response.ranked_flights and response.ranked_flights.options:
+                    select_prompt = f"\n\n👆 **Enter a number (1–{len(response.ranked_flights.options)}) to select a flight.**"
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": summary_msg + select_prompt,
+                        "ranked_flights": response.ranked_flights,
+                        "flight_query": response.flight_query,
+                    })
+                    st.session_state.awaiting_selection = True
+                else:
+                    st.session_state.messages.append({"role": "assistant", "content": summary_msg})
+                    st.session_state.awaiting_selection = False
+                    st.session_state.session = FleeAISession()
+
+            elif response.stage == "error":
+                st.session_state.messages.append({"role": "assistant", "content": f"❌ {response.message}"})
+                st.session_state.awaiting_selection = False
+                st.session_state.session = FleeAISession()
+
+            else:
+                st.session_state.messages.append({"role": "assistant", "content": response.message})
+
+            st.rerun()
+
+
+# ── Chat input (only shown after a search has been submitted) ────────────────
+if st.session_state.search_submitted and (prompt := st.chat_input(
     "Select a flight number..." if st.session_state.awaiting_selection
-    else "Where do you want to fly?"
-):
+    else "Add more details or ask a question..."
+)):
     # Show user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -462,4 +601,5 @@ with st.sidebar:
         st.session_state.session = FleeAISession()
         st.session_state.messages = []
         st.session_state.awaiting_selection = False
+        st.session_state.search_submitted = False
         st.rerun()
