@@ -90,7 +90,7 @@ class FlightOption(BaseModel):
 class RankedFlights(BaseModel):
     """Structured output of the Flight Search & Ranking Agent (Agent 2)."""
 
-    query: FlightQuery
+    query: Optional[FlightQuery] = Field(default=None, description="The original query — filled in by Python, not the LLM")
     options: List[FlightOption]
     summary: str = Field(description="1-2 sentence natural-language summary of the results")
 

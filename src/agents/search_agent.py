@@ -114,11 +114,10 @@ def search_duffel_flights(origin: str, destination: str, departure_date: str, pr
     except Exception as e:
         return {"summary": f"API Error: {str(e)}", "options": []}
 
-# Define the CrewAI Agent
 search_agent = Agent(
-    role="Flight Search & Ranking Expert",
-    goal="Search for flights using Duffel and rank them based on user preferences.",
-    backstory="An expert travel agent AI that uses API tools to find the best flights. You NEVER invent flight data. You only use the data provided by your tools.",
+    role="Flight Search Expert",
+    goal="Search for flights using the Duffel tool and return results.",
+    backstory="You search for flights using API tools. You only report data from the tool, never invent flights.",
     tools=[search_duffel_flights],
     llm=fleeai_llm,
     verbose=True,
@@ -127,33 +126,24 @@ search_agent = Agent(
 
 def create_search_task(query: FlightQuery) -> Task:
     """Creates a task for the agent to execute based on the user's FlightQuery."""
-    # Duffel's API requires 3-letter IATA codes, not city names. The
-    # orchestrator resolves origin_iata/destination_iata deterministically
-    # in Python (src/utils/iata_lookup.py) before Agent 2 ever runs -- use
-    # those. Falling back to query.origin/destination keeps this working
-    # for standalone tests that hardcode an IATA code directly into origin
-    # (e.g. tests/test_day2_agent2.py uses origin="LHR") without going
-    # through the orchestrator's resolution step at all.
     origin_code = query.origin_iata or query.origin
     destination_code = query.destination_iata or query.destination
 
     return Task(
-        description=f"""
-        Use the 'Search and Filter Duffel Flights' tool to find flights.
-        Input Data:
-        - Origin: {origin_code}
-        - Destination: {destination_code}
-        - Date: {query.departure_date}
-        - Budget: {query.budget_inr}
-        - Preferences: {query.preferences}
-
-        Review the tool's output. Every field in each FlightOption -- including
-        origin, destination, stops, duration_minutes, and price_inr -- must come
-        directly from the tool's output. Only 'rank_reason' should be written by
-        you, explaining why that option fits the user's preferences.
-        If no flights are found, output the empty summary provided by the tool.
-        """,
-        expected_output="A RankedFlights object containing a summary and a list of FlightOption objects.",
+        description=(
+            f"Search for flights using the 'Search and Filter Duffel Flights' tool.\n\n"
+            f"Call the tool with:\n"
+            f"- origin: {origin_code}\n"
+            f"- destination: {destination_code}\n"
+            f"- departure_date: {query.departure_date}\n"
+            f"- preferences: {query.preferences}\n"
+            f"- budget_inr: {query.budget_inr or 0}\n\n"
+            f"Return the results exactly as the tool gives them. "
+            f"For each flight, copy all fields (flight_id, airline, origin, destination, "
+            f"departure_time, arrival_time, stops, duration_minutes, price_inr) from the tool output. "
+            f"Add a short rank_reason for each flight."
+        ),
+        expected_output="A RankedFlights object with a summary and list of FlightOption objects.",
         agent=search_agent,
         output_pydantic=RankedFlights
     )
@@ -180,4 +170,7 @@ def run_flight_search(query: FlightQuery) -> RankedFlights:
         cache=False,
     )
     result = crew.kickoff()
-    return result.pydantic
+    ranked: RankedFlights = result.pydantic
+    # Fill in the query from Python — the LLM doesn't need to reproduce it
+    ranked.query = query
+    return ranked

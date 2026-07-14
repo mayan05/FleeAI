@@ -116,15 +116,10 @@ class BookingOrderOutput(BaseModel):
     )
 
 
-# Define the CrewAI Agent
 booking_agent = Agent(
-    role="Booking & Confirmation Specialist",
-    goal="Confirm the details of a selected flight and compile a booking order into a clear confirmation.",
-    backstory=(
-        "An meticulous airline booking desk agent AI. You NEVER invent a PNR, "
-        "price, or status yourself -- you always call your tool to compile the "
-        "order and then write a short, friendly itinerary summary from its output."
-    ),
+    role="Booking Specialist",
+    goal="Book a flight by calling the booking tool and returning the confirmation.",
+    backstory="You book flights by calling your tool. Never invent a PNR or price — always use the tool.",
     tools=[simulate_booking_order],
     llm=fleeai_llm,
     verbose=True,
@@ -135,35 +130,25 @@ booking_agent = Agent(
 def create_booking_task(selected_flight: FlightOption, passenger_count: int = 1) -> Task:
     """Creates a task for the agent to execute based on the user's selected FlightOption."""
     return Task(
-        description=f"""
-        Use the 'Simulate Flight Booking Order' tool to compile a booking order
-        for this selected flight, then write a short, friendly itinerary summary.
-
-        Input Data:
-        - flight_id: {selected_flight.flight_id}
-        - airline: {selected_flight.airline}
-        - origin: {selected_flight.origin}
-        - destination: {selected_flight.destination}
-        - departure_time: {selected_flight.departure_time}
-        - arrival_time: {selected_flight.arrival_time}
-        - stops: {selected_flight.stops}
-        - duration_minutes: {selected_flight.duration_minutes}
-        - price_inr: {selected_flight.price_inr}
-        - passenger_count: {passenger_count}
-
-        Call the tool with flight_id, airline, origin, destination,
-        departure_time, price_inr, and passenger_count. Then, using the
-        tool's output plus the input data above, produce:
-        - pnr, passenger_count, total_price_inr, status: copied EXACTLY
-          from the tool's output. Do not alter or invent them.
-        - itinerary_summary: a short (1-2 sentence) friendly confirmation
-          mentioning airline, route, departure time, arrival time, stops,
-          and total price.
-
-        Do NOT attempt to output the full flight details as a structured
-        object -- only the fields listed above.
-        """,
-        expected_output="pnr, passenger_count, total_price_inr, status (from the tool), and a short itinerary_summary.",
+        description=(
+            f"Book this flight using the 'Simulate Flight Booking Order' tool.\n\n"
+            f"Call the tool with:\n"
+            f"- flight_id: {selected_flight.flight_id}\n"
+            f"- airline: {selected_flight.airline}\n"
+            f"- origin: {selected_flight.origin}\n"
+            f"- destination: {selected_flight.destination}\n"
+            f"- departure_time: {selected_flight.departure_time}\n"
+            f"- price_inr: {selected_flight.price_inr}\n"
+            f"- passenger_count: {passenger_count}\n\n"
+            f"From the tool's output, return:\n"
+            f"- pnr: exactly as returned by the tool\n"
+            f"- passenger_count: exactly as returned\n"
+            f"- total_price_inr: exactly as returned\n"
+            f"- status: exactly as returned\n"
+            f"- itinerary_summary: write a short 1-2 sentence confirmation mentioning "
+            f"the airline, route, and price"
+        ),
+        expected_output="pnr, passenger_count, total_price_inr, status, and itinerary_summary.",
         agent=booking_agent,
         output_pydantic=BookingOrderOutput,
     )
