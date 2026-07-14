@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(_project_root, ".env"))
 
 import streamlit as st
+# pyrefly: ignore [missing-import]
 from src.orchestrator import FleeAISession
 
 
@@ -455,7 +456,6 @@ with st.sidebar:
         "1. **Query Understanding** — parses your request\n"
         "2. **Flight Search** — finds & ranks flights\n"
         "3. **Booking** — confirms your selection\n\n"
-        "Built with CrewAI + Groq (free tier)."
     )
     st.divider()
     if st.button("🔄 New Search", use_container_width=True):

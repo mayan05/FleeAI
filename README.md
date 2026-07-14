@@ -91,9 +91,13 @@ uv run streamlit run src/app.py
 
 Opens at **http://localhost:8501** — type a flight request and go.
 
-### Run the standalone agent tests
+### Run the tests
 
 ```bash
+# Run pytest for unit/auth tests
+PYTHONPATH=. uv run pytest
+
+# Run individual agent end-to-end test scripts
 uv run python -m tests.test_day1_agent1
 uv run python -m tests.test_day2_agent2
 uv run python -m tests.test_day3_agent3

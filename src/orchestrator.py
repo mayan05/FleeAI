@@ -15,7 +15,9 @@ that tell the UI exactly what to render next.
 from __future__ import annotations
 
 import logging
-from src.agents.query_agent import run_query_understanding
+# pyrefly: ignore [missing-import]
+from src.agents.query_agent import run_query_understanding 
+# pyrefly: ignore [missing-import]
 from src.schemas.models import (
     FlightQuery,
     FlightOption,
@@ -23,7 +25,8 @@ from src.schemas.models import (
     BookingConfirmation,
     OrchestratorResponse,
 )
-from src.utils.iata_lookup import city_to_iata
+# pyrefly: ignore [missing-import]
+from src.utils.iata_lookup import city_to_iata 
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,7 @@ def _run_search(query: FlightQuery) -> RankedFlights | None:
     will show the resolved FlightQuery and stop there.
     """
     try:
+        # pyrefly: ignore [missing-import]
         from src.agents.search_agent import run_flight_search
         logger.info("Using real Agent 2 (search_agent) for flight search")
         return run_flight_search(query)
@@ -91,6 +95,7 @@ def _run_booking(selected: FlightOption, passengers: int) -> BookingConfirmation
     will acknowledge the selection and show a clear placeholder.
     """
     try:
+        # pyrefly: ignore [missing-import]
         from src.agents.booking_agent import run_booking
         logger.info("Using real Agent 3 (booking_agent) for booking")
         return run_booking(selected, passengers)
