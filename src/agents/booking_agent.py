@@ -158,33 +158,36 @@ def run_booking(selected_flight: FlightOption, passenger_count: int = 1) -> Book
     """
     Entry point used by the orchestrator (src/orchestrator.py::_run_booking).
 
-    Mirrors run_flight_search() in search_agent.py: any genuine failure
-    during the crew run is allowed to propagate as a normal exception,
-    since orchestrator._handle_flight_selection() already wraps this call
-    in its own try/except and turns failures into a proper error message
-    for the UI.
-
-    The final BookingConfirmation.selected_flight is set directly from the
-    `selected_flight` argument -- the same FlightOption instance the
-    orchestrator already validated and passed in -- so all 10 of its
-    fields are guaranteed present. Only pnr/passenger_count/
-    total_price_inr/status/itinerary_summary come from the agent run.
+    Calls the booking tool directly from Python — no LLM needed.
+    The tool is pure deterministic logic (PNR generation, price math),
+    so routing it through a slow local model just adds latency and
+    unreliability (the 3B model was failing to extract the PNR).
     """
-    task = create_booking_task(selected_flight, passenger_count)
-    crew = Crew(
-        agents=[booking_agent],
-        tasks=[task],
-        verbose=True,
-        cache=False,
+    # Call the tool function directly — same function the agent would call
+    tool_result = simulate_booking_order.func(
+        flight_id=selected_flight.flight_id,
+        airline=selected_flight.airline,
+        origin=selected_flight.origin,
+        destination=selected_flight.destination,
+        departure_time=selected_flight.departure_time,
+        price_inr=str(selected_flight.price_inr),
+        passenger_count=str(passenger_count),
     )
-    result = crew.kickoff()
-    order: BookingOrderOutput = result.pydantic
+
+    # Build the itinerary summary in plain Python
+    stops_text = "Direct" if selected_flight.stops == 0 else f"{selected_flight.stops} stop(s)"
+    itinerary = (
+        f"Your {tool_result['airline']} flight from {tool_result['origin']} to "
+        f"{tool_result['destination']} departs at {selected_flight.departure_time}. "
+        f"{stops_text}, {tool_result['passenger_count']} passenger(s), "
+        f"total ₹{tool_result['total_price_inr']:,}."
+    )
 
     return BookingConfirmation(
-        pnr=order.pnr,
+        pnr=tool_result["pnr"],
         selected_flight=selected_flight,
-        passenger_count=order.passenger_count,
-        total_price_inr=order.total_price_inr,
-        status=order.status,
-        itinerary_summary=order.itinerary_summary,
+        passenger_count=tool_result["passenger_count"],
+        total_price_inr=tool_result["total_price_inr"],
+        status=tool_result["status"],
+        itinerary_summary=itinerary,
     )
