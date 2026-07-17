@@ -37,6 +37,57 @@ def resolve_relative_date(phrase: str, reference_date: date | None = None) -> st
     reference_date = reference_date or date.today()
     phrase = phrase.strip().lower()
 
+    # ── Explicit date formats (handles smaller LLMs putting real dates into
+    #    raw_date_expression instead of departure_date) ──────────────────
+    # ISO format: 2026-07-16
+    iso_match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", phrase)
+    if iso_match:
+        try:
+            return date(int(iso_match.group(1)), int(iso_match.group(2)), int(iso_match.group(3))).isoformat()
+        except ValueError:
+            pass
+
+    # Common formats: "July 16", "July 16 2026", "16 July", "16 July 2026"
+    MONTHS = {
+        "january": 1, "february": 2, "march": 3, "april": 4,
+        "may": 5, "june": 6, "july": 7, "august": 8,
+        "september": 9, "october": 10, "november": 11, "december": 12,
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+        "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9,
+        "oct": 10, "nov": 11, "dec": 12,
+    }
+    # "July 16" or "July 16 2026" or "July 16, 2026"
+    m = re.fullmatch(r"([a-z]+)\s+(\d{1,2}),?\s*(\d{4})?", phrase)
+    if m and m.group(1) in MONTHS:
+        month = MONTHS[m.group(1)]
+        day = int(m.group(2))
+        year = int(m.group(3)) if m.group(3) else reference_date.year
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+
+    # "16 July" or "16 July 2026"
+    m = re.fullmatch(r"(\d{1,2})\s+([a-z]+),?\s*(\d{4})?", phrase)
+    if m and m.group(2) in MONTHS:
+        day = int(m.group(1))
+        month = MONTHS[m.group(2)]
+        year = int(m.group(3)) if m.group(3) else reference_date.year
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+
+    # MM/DD/YYYY or DD/MM/YYYY — assume MM/DD (US convention)
+    m = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", phrase)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(1)), int(m.group(2))).isoformat()
+        except ValueError:
+            pass
+
+    # ── Relative phrases ────────────────────────────────────────────────
+
     if phrase in ("today",):
         return reference_date.isoformat()
 

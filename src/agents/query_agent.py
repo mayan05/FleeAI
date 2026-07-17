@@ -20,23 +20,9 @@ from src.schemas.models import FlightQuery
 from src.utils.date_resolver import resolve_relative_date
 
 query_understanding_agent = Agent(
-    role="Flight Query Analyst",
-    goal=(
-        "Extract precise, structured flight search parameters from a user's "
-        "natural language request. Never invent information the user did not "
-        "provide -- if origin, destination, or departure date is missing or "
-        "ambiguous, flag it clearly instead of guessing."
-    ),
-    backstory=(
-        "You are a meticulous travel-desk analyst. You've seen every way people "
-        "describe travel plans -- vague dates, city nicknames, budget ranges -- "
-        "and you're excellent at pulling out exactly what's needed for a flight "
-        "search while knowing when to ask instead of assume. You know you are "
-        "bad at mental weekday arithmetic, so you never try to calculate an "
-        "actual date from a phrase like 'next Friday' -- you just capture the "
-        "phrase exactly as the user said it and let a separate system resolve "
-        "it precisely."
-    ),
+    role="Flight Query Extractor",
+    goal="Extract origin, destination, and departure date from a flight booking request.",
+    backstory="You extract flight details from user messages into structured JSON.",
     llm=fleeai_llm,
     verbose=True,
     allow_delegation=False,
@@ -52,11 +38,8 @@ def build_extraction_task(user_request: str, conversation_context: str = "") -> 
     follow-up question).
     """
     context_block = (
-        f"\n\nIMPORTANT: The user has already answered a clarification "
-        f"question. You MUST extract origin, destination, and date info from "
-        f"this answer and merge it with the original request below -- do not "
-        f"ask the same question again if the answer already covers it.\n"
-        f"{conversation_context}"
+        f"\n\nPrevious conversation:\n{conversation_context}\n"
+        f"Use the answers above to fill in any missing fields."
         if conversation_context
         else ""
     )
@@ -64,43 +47,27 @@ def build_extraction_task(user_request: str, conversation_context: str = "") -> 
 
     return Task(
         description=(
-            f"Today's date is {today_str}. Do NOT use this to calculate a "
-            f"final date yourself -- see date rules below.\n\n"
-            f"Analyze this flight booking request and extract structured search "
-            f"parameters.\n\nUser request: \"{user_request}\"{context_block}\n\n"
-            "Rules:\n"
-            "- origin, destination, and a date (either departure_date OR "
-            "raw_date_expression) are REQUIRED to consider the query complete.\n"
-            "- DATE HANDLING: if the user gave an explicit calendar date "
-            "('July 20', '20th', '2026-07-20'), put the resolved YYYY-MM-DD in "
-            "departure_date. If the user gave a RELATIVE phrase ('next "
-            "Friday', 'tomorrow', 'in 2 weeks'), do NOT calculate a date "
-            "yourself -- copy the phrase verbatim into raw_date_expression and "
-            "leave departure_date null. You are unreliable at weekday math, so "
-            "never attempt it.\n"
-            "- CRITICAL: If the user's message does not explicitly state an "
-            "origin city, destination city, or any date/date-phrase, you MUST "
-            "leave that field as null and add it to missing_fields. Never "
-            "infer, assume, or invent an origin, destination, or date the "
-            "user did not explicitly say -- even if one seems 'likely'.\n\n"
-            "EXAMPLE OF WHAT NOT TO DO:\n"
-            "User request: \"I need a flight to Mumbai sometime, nothing fancy\"\n"
-            "WRONG output: origin=\"Bangalore\", departure_date=\"2026-07-14\", "
-            "is_complete=true  <-- WRONG, user never said an origin, and "
-            "'sometime' is not a real date.\n"
-            "CORRECT output: origin=null, destination=\"Mumbai\", "
-            "departure_date=null, raw_date_expression=null, is_complete=false, "
-            "missing_fields=[\"origin\", \"departure_date\"], "
-            "clarification_question=\"Which city will you be flying from, and "
-            "do you have a date in mind?\"\n\n"
-            "- Do not fabricate a budget, passenger count, or preference the "
-            "user never mentioned -- passengers defaults to 1, cabin_class "
-            "defaults to 'economy' only if not specified.\n"
-            "- If anything required is missing, set is_complete to false, list "
-            "the missing fields, and write exactly ONE clear, friendly "
-            "clarification question covering all missing pieces at once."
+            f"Today's date is {today_str}.\n\n"
+            f"Extract flight details from this request:\n"
+            f"\"{user_request}\"{context_block}\n\n"
+            "Extract these fields:\n"
+            "- origin: the departure city (e.g. \"Patna\", \"Delhi\")\n"
+            "- destination: the arrival city\n"
+            "- departure_date: date in YYYY-MM-DD format if given explicitly\n"
+            "- raw_date_expression: if user said something like \"tomorrow\" or "
+            "\"next Friday\", put the phrase here instead of departure_date\n"
+            "- passengers: number of passengers (default 1)\n"
+            "- budget_inr: budget in INR if mentioned, else null\n"
+            "- cabin_class: economy/business/first (default economy)\n"
+            "- preferences: list of preferences like [\"direct flights\"]\n"
+            "- is_complete: true if origin AND destination AND (departure_date OR raw_date_expression) are all present\n"
+            "- missing_fields: list of missing required fields\n"
+            "- clarification_question: question to ask if is_complete is false\n\n"
+            "Example — user says: \"fly from mumbai to delhi on 2026-08-01\"\n"
+            "Output: origin=\"Mumbai\", destination=\"Delhi\", departure_date=\"2026-08-01\", "
+            "is_complete=true, missing_fields=[]"
         ),
-        expected_output="A FlightQuery JSON object matching the schema exactly.",
+        expected_output="A FlightQuery JSON object.",
         agent=query_understanding_agent,
         output_pydantic=FlightQuery,
     )

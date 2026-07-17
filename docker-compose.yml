@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fleeai-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # Map your local machine's Ollama folder to the container.
+      # This ensures the container uses the model you already downloaded!
+      - ~/.ollama:/root/.ollama
+    # This custom entrypoint starts the API server in the background, waits 3 seconds,
+    # and then explicitly pulls/wakes up your specific model so it's ready immediately.
+    entrypoint: /bin/sh -c "ollama serve & sleep 3 && ollama pull llama3.2:3b && wait"
+
+  app:
+    build: .
+    container_name: fleeai-app
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      # Inside the Docker network, the app talks to the 'ollama' service container
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+    volumes:
+      # Map the src directory for hot-reloading (changes on your machine reflect in the app instantly)
+      - ./src:/app/src
